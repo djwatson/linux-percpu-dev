@@ -229,3 +229,6 @@ cond_syscall(sys_bpf);
 
 /* execveat */
 cond_syscall(sys_execveat);
+
+/* percpu userspace critical sections */
+cond_syscall(sys_percpu);

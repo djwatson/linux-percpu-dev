@@ -1275,6 +1275,8 @@ enum perf_event_task_context {
 	perf_nr_task_contexts,
 };
 
+struct thread_percpu_user;
+
 struct task_struct {
 	volatile long state;	/* -1 unrunnable, 0 runnable, >0 stopped */
 	void *stack;
@@ -1709,6 +1711,10 @@ struct task_struct {
 #endif
 #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
 	unsigned long	task_state_change;
+#endif
+#ifdef CONFIG_PERCPU_USER
+	struct preempt_notifier percpu_user_notifier;
+	struct thread_percpu_user __user *percpu_user;
 #endif
 };
 
@@ -3089,5 +3095,17 @@ static inline unsigned long rlimit_max(unsigned int limit)
 {
 	return task_rlimit_max(current, limit);
 }
+
+#ifdef CONFIG_PERCPU_USER
+void percpu_user_fork(struct task_struct *t);
+void percpu_user_execve(struct task_struct *t);
+#else
+static inline void percpu_user_fork(struct task_struct *t)
+{
+}
+static inline void percpu_user_execve(struct task_struct *t)
+{
+}
+#endif
 
 #endif

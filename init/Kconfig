@@ -1559,6 +1559,16 @@ config PCI_QUIRKS
 	  bugs/quirks. Disable this only if your target machine is
 	  unaffected by PCI quirks.
 
+config PERCPU_USER
+	bool "Enable percpu() system call" if EXPERT
+	default y
+	select PREEMPT_NOTIFIERS
+	help
+	  Enable the percpu() system call which provides a building block
+	  for fast per-cpu critical sections in user-space.
+
+	  If unsure, say Y.
+
 config EMBEDDED
 	bool "Embedded system"
 	option allnoconfig_y
