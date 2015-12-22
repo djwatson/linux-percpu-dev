@@ -59,6 +59,7 @@ struct sched_param {
 #include <linux/gfp.h>
 #include <linux/magic.h>
 #include <linux/cgroup-defs.h>
+#include <linux/rseq.h>
 
 #include <asm/processor.h>
 
@@ -1830,6 +1831,9 @@ struct task_struct {
 	unsigned long	task_state_change;
 #endif
 	int pagefault_disabled;
+#ifdef CONFIG_RSEQ
+	struct thread_rseq __user *rseq;
+#endif
 /* CPU-specific state of this task */
 	struct thread_struct thread;
 /*
@@ -3206,5 +3210,59 @@ static inline unsigned long rlimit_max(unsigned int limit)
 {
 	return task_rlimit_max(current, limit);
 }
+
+#ifdef CONFIG_RSEQ
+void __rseq_handle_notify_resume(struct task_struct *t);
+static inline void rseq_set_notify_resume(struct task_struct *t)
+{
+	if (t->rseq)
+		set_tsk_thread_flag(t, TIF_NOTIFY_RESUME);
+}
+static inline void rseq_handle_notify_resume(struct task_struct *t)
+{
+	if (t->rseq)
+		__rseq_handle_notify_resume(t);
+}
+static inline bool rseq_feature_available(void)
+{
+	return true;
+}
+/*
+ * If parent process has a restartatable section, the child inherits.
+ * Only applies when forking a process, not a thread.
+ */
+static inline void rseq_fork(struct task_struct *t)
+{
+	t->rseq = current->rseq;
+}
+static inline void rseq_execve(struct task_struct *t)
+{
+	t->rseq = NULL;
+}
+static inline void rseq_exit(struct task_struct *t)
+{
+	t->rseq = NULL;
+}
+#else
+static inline void rseq_set_notify_resume(struct task_struct *t)
+{
+}
+static inline void rseq_handle_notify_resume(struct task_struct *t)
+{
+}
+static inline bool rseq_feature_available(void)
+{
+	return false;
+}
+static inline void rseq_fork(struct task_struct *t)
+{
+}
+static inline void rseq_execve(struct task_struct *t)
+{
+}
+static inline void rseq_exit(struct task_struct *t)
+{
+}
+#endif
 
 #endif

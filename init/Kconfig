@@ -1589,6 +1589,18 @@ config MEMBARRIER
 
 	  If unsure, say Y.
 
+config RSEQ
+	bool "Enable restartable sections and CPU number cache" if EXPERT
+	default y
+	help
+	  Enable restartable sections and CPU number cache. The
+	  restartable sections provide a mechanism to built fast atomic
+	  sequences of instructions operating on per-cpu data structures
+	  in user-space. The CPU number cache speeds up getting the
+	  current CPU number from user-space.
+
+	  If unsure, say Y.
+
 config EMBEDDED
 	bool "Embedded system"
 	option allnoconfig_y
