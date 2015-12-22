@@ -252,6 +252,7 @@ void __put_task_struct(struct task_struct *tsk)
 	WARN_ON(tsk == current);
 
 	cgroup_free(tsk);
+	getcpu_cache_exit(tsk);
 	task_numa_free(tsk);
 	security_task_free(tsk);
 	exit_creds(tsk);
@@ -1553,6 +1554,9 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	 * before holding sighand lock.
 	 */
 	copy_seccomp(p);
+
+	if (!(clone_flags & CLONE_THREAD))
+		getcpu_cache_fork(p);
 
 	/*
 	 * Process group and session signals need to be delivered to just the

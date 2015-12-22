@@ -1614,6 +1614,16 @@ config MEMBARRIER
 
 	  If unsure, say Y.
 
+config GETCPU_CACHE
+	bool "Enable getcpu cache" if EXPERT
+	default y
+	help
+	  Enable the getcpu cache system call. It provides a user-space
+	  cache for the current CPU number value, which speeds up
+	  getting the current CPU number from user-space.
+
+	  If unsure, say Y.
+
 config EMBEDDED
 	bool "Embedded system"
 	option allnoconfig_y
