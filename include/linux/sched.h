@@ -59,6 +59,7 @@ struct sched_param {
 #include <linux/gfp.h>
 #include <linux/magic.h>
 #include <linux/cgroup-defs.h>
+#include <linux/thread_local_abi.h>
 
 #include <asm/processor.h>
 
@@ -1830,6 +1831,10 @@ struct task_struct {
 	unsigned long	task_state_change;
 #endif
 	int pagefault_disabled;
+#ifdef CONFIG_THREAD_LOCAL_ABI
+	uint32_t tlabi_features;
+	struct thread_local_abi __user *tlabi;
+#endif
 /* CPU-specific state of this task */
 	struct thread_struct thread;
 /*
@@ -3206,5 +3211,66 @@ static inline unsigned long rlimit_max(unsigned int limit)
 {
 	return task_rlimit_max(current, limit);
 }
+
+#ifdef CONFIG_THREAD_LOCAL_ABI
+/*
+ * If parent process has a thread-local ABI, the child inherits. Only
+ * applies when forking a process, not a thread.
+ */
+static inline void thread_local_abi_fork(struct task_struct *t)
+{
+	t->tlabi_features = current->tlabi_features;
+	t->tlabi = current->tlabi;
+}
+static inline void thread_local_abi_execve(struct task_struct *t)
+{
+	t->tlabi_features = 0;
+	t->tlabi = NULL;
+}
+static inline void thread_local_abi_exit(struct task_struct *t)
+{
+	t->tlabi_features = 0;
+	t->tlabi = NULL;
+}
+#else
+static inline void thread_local_abi_fork(struct task_struct *t)
+{
+}
+static inline void thread_local_abi_execve(struct task_struct *t)
+{
+}
+static inline void thread_local_abi_exit(struct task_struct *t)
+{
+}
+#endif
+
+#ifdef CONFIG_THREAD_LOCAL_ABI_CPU_ID
+void __tlabi_cpu_id_handle_notify_resume(struct task_struct *t);
+static inline void tlabi_cpu_id_set_notify_resume(struct task_struct *t)
+{
+	if (t->tlabi_features & TLABI_FEATURE_CPU_ID)
+		set_tsk_thread_flag(t, TIF_NOTIFY_RESUME);
+}
+static inline void tlabi_cpu_id_handle_notify_resume(struct task_struct *t)
+{
+	if (t->tlabi_features & TLABI_FEATURE_CPU_ID)
+		__tlabi_cpu_id_handle_notify_resume(t);
+}
+static inline bool tlabi_cpu_id_feature_available(void)
+{
+	return true;
+}
+#else
+static inline void tlabi_cpu_id_set_notify_resume(struct task_struct *t)
+{
+}
+static inline void tlabi_cpu_id_handle_notify_resume(struct task_struct *t)
+{
+}
+static inline bool tlabi_cpu_id_feature_available(void)
+{
+	return false;
+}
+#endif
 
 #endif
