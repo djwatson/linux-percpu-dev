@@ -103,6 +103,7 @@ obj-$(CONFIG_TORTURE_TEST) += torture.o
 obj-$(CONFIG_MEMBARRIER) += membarrier.o
 
 obj-$(CONFIG_HAS_IOMEM) += memremap.o
+obj-$(CONFIG_THREAD_LOCAL_ABI) += thread_local_abi.o
 
 $(obj)/configs.o: $(obj)/config_data.h
 
