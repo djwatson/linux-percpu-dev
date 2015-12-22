@@ -59,6 +59,7 @@ struct sched_param {
 #include <linux/gfp.h>
 #include <linux/magic.h>
 #include <linux/cgroup-defs.h>
+#include <linux/rseq.h>
 
 #include <asm/processor.h>
 
@@ -1830,6 +1831,10 @@ struct task_struct {
 	unsigned long	task_state_change;
 #endif
 	int pagefault_disabled;
+#ifdef CONFIG_RSEQ
+	struct rseq __user *rseq;
+	uint32_t rseq_event_counter;
+#endif
 /* CPU-specific state of this task */
 	struct thread_struct thread;
 /*
@@ -3206,5 +3211,76 @@ static inline unsigned long rlimit_max(unsigned int limit)
 {
 	return task_rlimit_max(current, limit);
 }
+
+#ifdef CONFIG_RSEQ
+static inline bool rseq_feature_available(void)
+{
+	return true;
+}
+static inline void rseq_set_notify_resume(struct task_struct *t)
+{
+	if (t->rseq)
+		set_tsk_thread_flag(t, TIF_NOTIFY_RESUME);
+}
+void __rseq_handle_notify_resume(struct pt_regs *regs);
+static inline void rseq_handle_notify_resume(struct pt_regs *regs)
+{
+	if (current->rseq)
+		__rseq_handle_notify_resume(regs);
+}
+/*
+ * If parent process has a registered restartable sequences area, the
+ * child inherits. Only applies when forking a process, not a thread. In
+ * case a parent fork() in the middle of a restartable sequence, set the
+ * resume notifier to force the child to retry.
+ */
+static inline void rseq_fork(struct task_struct *t, unsigned long clone_flags)
+{
+	if (clone_flags & CLONE_THREAD) {
+		t->rseq = NULL;
+		t->rseq_event_counter = 0;
+	} else {
+		t->rseq = current->rseq;
+		t->rseq_event_counter = current->rseq_event_counter;
+		rseq_set_notify_resume(t);
+	}
+}
+static inline void rseq_execve(struct task_struct *t)
+{
+	t->rseq = NULL;
+	t->rseq_event_counter = 0;
+}
+static inline void rseq_sched_out(struct task_struct *t)
+{
+	rseq_set_notify_resume(t);
+}
+static inline void rseq_signal_deliver(struct pt_regs *regs)
+{
+	rseq_handle_notify_resume(regs);
+}
+#else
+static inline bool rseq_feature_available(void)
+{
+	return false;
+}
+static inline void rseq_set_notify_resume(struct task_struct *t)
+{
+}
+static inline void rseq_handle_notify_resume(struct pt_regs *regs)
+{
+}
+static inline void rseq_fork(struct task_struct *t)
+{
+}
+static inline void rseq_execve(struct task_struct *t)
+{
+}
+static inline void rseq_sched_out(struct task_struct *t)
+{
+}
+static inline void rseq_signal_deliver(struct pt_regs *regs)
+{
+}
+#endif
 
 #endif
