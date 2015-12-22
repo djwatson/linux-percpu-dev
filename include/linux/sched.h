@@ -1830,6 +1830,9 @@ struct task_struct {
 	unsigned long	task_state_change;
 #endif
 	int pagefault_disabled;
+#ifdef CONFIG_GETCPU_CACHE
+	int32_t __user *cpu_cache;
+#endif
 /* CPU-specific state of this task */
 	struct thread_struct thread;
 /*
@@ -3206,5 +3209,51 @@ static inline unsigned long rlimit_max(unsigned int limit)
 {
 	return task_rlimit_max(current, limit);
 }
+
+#ifdef CONFIG_GETCPU_CACHE
+void __getcpu_cache_handle_notify_resume(struct task_struct *t);
+/*
+ * If parent process has a thread-local ABI, the child inherits. Only
+ * applies when forking a process, not a thread.
+ */
+static inline void getcpu_cache_fork(struct task_struct *t)
+{
+	t->cpu_cache = current->cpu_cache;
+}
+static inline void getcpu_cache_execve(struct task_struct *t)
+{
+	t->cpu_cache = NULL;
+}
+static inline void getcpu_cache_exit(struct task_struct *t)
+{
+	t->cpu_cache = NULL;
+}
+static inline void getcpu_cache_set_notify_resume(struct task_struct *t)
+{
+	if (t->cpu_cache)
+		set_tsk_thread_flag(t, TIF_NOTIFY_RESUME);
+}
+static inline void getcpu_cache_handle_notify_resume(struct task_struct *t)
+{
+	if (t->cpu_cache)
+		__getcpu_cache_handle_notify_resume(t);
+}
+#else
+static inline void getcpu_cache_fork(struct task_struct *t)
+{
+}
+static inline void getcpu_cache_execve(struct task_struct *t)
+{
+}
+static inline void getcpu_cache_exit(struct task_struct *t)
+{
+}
+static inline void getcpu_cache_set_notify_resume(struct task_struct *t)
+{
+}
+static inline void getcpu_cache_handle_notify_resume(struct task_struct *t)
+{
+}
+#endif
 
 #endif
