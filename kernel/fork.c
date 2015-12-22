@@ -252,6 +252,7 @@ void __put_task_struct(struct task_struct *tsk)
 	WARN_ON(tsk == current);
 
 	cgroup_free(tsk);
+	thread_local_abi_exit(tsk);
 	task_numa_free(tsk);
 	security_task_free(tsk);
 	exit_creds(tsk);
@@ -1553,6 +1554,12 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	 * before holding sighand lock.
 	 */
 	copy_seccomp(p);
+
+	if (!(clone_flags & CLONE_THREAD)) {
+		retval = -ENOMEM;
+		if (thread_local_abi_fork(p))
+			goto bad_fork_cancel_cgroup;
+	}
 
 	/*
 	 * Process group and session signals need to be delivered to just the
