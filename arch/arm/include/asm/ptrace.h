@@ -158,5 +158,16 @@ static inline unsigned long user_stack_pointer(struct pt_regs *regs)
 		((current_stack_pointer | (THREAD_SIZE - 1)) - 7) - 1;	\
 })
 
+static inline unsigned long rseq_regs_abort_ip(struct pt_regs *regs)
+{
+	return regs->ARM_r2;
+}
+
+/* The register "r3" holds the 32-bit event counter. */
+static inline uint32_t rseq_regs_event_counter(struct pt_regs *regs)
+{
+	return (uint32_t)regs->ARM_r3;
+}
+
 #endif /* __ASSEMBLY__ */
 #endif
