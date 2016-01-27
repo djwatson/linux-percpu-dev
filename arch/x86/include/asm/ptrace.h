@@ -252,5 +252,16 @@ extern int do_get_thread_area(struct task_struct *p, int idx,
 extern int do_set_thread_area(struct task_struct *p, int idx,
 			      struct user_desc __user *info, int can_allocate);
 
+static inline unsigned long rseq_regs_abort_ip(struct pt_regs *regs)
+{
+	return regs->cx;
+}
+
+/* The register "dx" holds the 32-bit event counter. */
+static inline uint32_t rseq_regs_event_counter(struct pt_regs *regs)
+{
+	return (uint32_t)regs->dx;
+}
+
 #endif /* !__ASSEMBLY__ */
 #endif /* _ASM_X86_PTRACE_H */
