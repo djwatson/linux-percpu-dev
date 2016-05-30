@@ -5093,6 +5093,7 @@ L:	linux-kernel@vger.kernel.org
 S:	Supported
 F:	kernel/rseq.c
 F:	include/uapi/linux/rseq.h
+F:	tools/testing/selftests/rseq/
 
 GFS2 FILE SYSTEM
 M:	Steven Whitehouse <swhiteho@redhat.com>
