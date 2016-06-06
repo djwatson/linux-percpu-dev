@@ -32,6 +32,9 @@
 #include <linux/types.h>
 #include <asm/ptrace.h>
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/rseq.h>
+
 /*
  * Each restartable sequence assembly block defines a "struct rseq_cs"
  * structure which describes the start_ip and post_commit_ip addresses,
@@ -121,6 +124,7 @@ static bool rseq_update_cpu_id_event_counter(struct task_struct *t)
 	u.e.event_counter = ++t->rseq_event_counter;
 	if (__put_user(u.v, &t->rseq->u.v))
 		return false;
+	trace_rseq_update(t);
 	return true;
 }
 
@@ -152,8 +156,13 @@ static bool rseq_ip_fixup(struct pt_regs *regs)
 	void __user *start_ip = NULL;
 	void __user *post_commit_ip = NULL;
 	void __user *abort_ip = NULL;
+	bool ret;
 
-	if (!rseq_get_rseq_cs(t, &start_ip, &post_commit_ip, &abort_ip))
+	ret = rseq_get_rseq_cs(t, &start_ip, &post_commit_ip, &abort_ip);
+	trace_rseq_ip_fixup((void __user *)instruction_pointer(regs),
+		start_ip, post_commit_ip, abort_ip, t->rseq_event_counter,
+		ret);
+	if (!ret)
 		return false;
 
 	/* Handle potentially not being within a critical section. */
