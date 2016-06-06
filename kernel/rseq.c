@@ -29,6 +29,9 @@
 #include <linux/rseq.h>
 #include <asm/ptrace.h>
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/rseq.h>
+
 /*
  * The algorithm for a restartable sequence is as follows:
  *
@@ -76,8 +79,12 @@
 
 static int rseq_increment_event_counter(struct task_struct *t)
 {
-	if (__put_user(++t->rseq_event_counter,
-			&t->rseq->u.e.event_counter))
+	int ret;
+
+	ret = __put_user(++t->rseq_event_counter,
+			&t->rseq->u.e.event_counter);
+	trace_rseq_inc(t->rseq_event_counter, ret);
+	if (ret)
 		return -1;
 	return 0;
 }
@@ -120,8 +127,13 @@ static int rseq_ip_fixup(struct pt_regs *regs)
 	struct task_struct *t = current;
 	void __user *post_commit_ip = NULL;
 	void __user *abort_ip = NULL;
+	int ret;
 
-	if (rseq_get_rseq_cs(t, &post_commit_ip, &abort_ip))
+	ret = rseq_get_rseq_cs(t, &post_commit_ip, &abort_ip);
+	trace_rseq_ip_fixup((void __user *)instruction_pointer(regs),
+		post_commit_ip, abort_ip, t->rseq_event_counter,
+		ret);
+	if (ret)
 		return -1;
 
 	/* Handle potentially being within a critical section. */
