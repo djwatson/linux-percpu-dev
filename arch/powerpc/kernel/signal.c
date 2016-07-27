@@ -131,6 +131,8 @@ static void do_signal(struct pt_regs *regs)
 	/* Re-enable the breakpoints for the signal stack */
 	thread_change_pc(current, regs);
 
+	rseq_signal_deliver(regs);
+
 	if (is32) {
         	if (ksig.ka.sa.sa_flags & SA_SIGINFO)
 			ret = handle_rt_signal32(&ksig, oldset, regs);
@@ -157,6 +159,7 @@ void do_notify_resume(struct pt_regs *regs, unsigned long thread_info_flags)
 	if (thread_info_flags & _TIF_NOTIFY_RESUME) {
 		clear_thread_flag(TIF_NOTIFY_RESUME);
 		tracehook_notify_resume(regs);
+		rseq_handle_notify_resume(regs);
 	}
 
 	user_enter();
