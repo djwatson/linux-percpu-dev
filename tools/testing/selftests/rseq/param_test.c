@@ -75,6 +75,20 @@ static __thread unsigned int yield_mod_cnt, nr_retry;
 	"bne 222b\n\t" \
 	"333:\n\t"
 
+#elif __PPC__
+#define INJECT_ASM_REG	"r18"
+
+#define RSEQ_INJECT_CLOBBER \
+	, INJECT_ASM_REG
+
+#define RSEQ_INJECT_ASM(n) \
+	"lwz %%" INJECT_ASM_REG ", %[loop_cnt_" #n "]\n\t" \
+	"cmpwi %%" INJECT_ASM_REG ", 0\n\t" \
+	"beq 333f\n\t" \
+	"222:\n\t" \
+	"subic. %%" INJECT_ASM_REG ", %%" INJECT_ASM_REG ", 1\n\t" \
+	"bne 222b\n\t" \
+	"333:\n\t"
 #else
 #error unsupported target
 #endif

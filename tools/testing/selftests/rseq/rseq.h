@@ -134,6 +134,35 @@ do {									\
 #define has_fast_acquire_release()	0
 #define has_single_copy_load_64()	1
 
+#elif __PPC__
+#define smp_mb()	__asm__ __volatile__ ("sync" : : : "memory")
+#define smp_lwsync()	__asm__ __volatile__ ("lwsync" : : : "memory")
+#define smp_rmb()	smp_lwsync()
+#define smp_wmb()	smp_lwsync()
+
+#define smp_load_acquire(p)						\
+__extension__ ({							\
+	__typeof(*p) ____p1 = READ_ONCE(*p);				\
+	smp_lwsync();							\
+	____p1;								\
+})
+
+#define smp_acquire__after_ctrl_dep()	smp_lwsync()
+
+#define smp_store_release(p, v)						\
+do {									\
+	smp_lwsync();							\
+	WRITE_ONCE(*p, v);						\
+} while (0)
+
+#define has_fast_acquire_release()	0
+
+# if __PPC64__
+# define has_single_copy_load_64()	1
+# else
+# define has_single_copy_load_64()	0
+# endif
+
 #else
 #error unsupported target
 #endif
@@ -385,6 +414,76 @@ bool rseq_finish(struct rseq_lock *rlock,
 		  [rseq_cs]"r"(&start_value.rseqp->rseq_cs)
 		  RSEQ_INJECT_INPUT
 		: "r0", "r1", "memory", "cc"
+		  RSEQ_INJECT_CLOBBER
+		: failure
+	);
+#elif __PPC64__
+	__asm__ __volatile__ goto (
+		".pushsection __rseq_table, \"aw\"\n\t"
+		".balign 32\n\t"
+		"3:\n\t"
+		".quad 1f, 2f, %l[failure], 0x0\n\t"
+		".popsection\n\t"
+		"1:\n\t"
+		RSEQ_INJECT_ASM(1)
+		"lis %%r17, (3b)@highest\n\t"
+		"ori %%r17, %%r17, (3b)@higher\n\t"
+		"rldicr %%r17, %%r17, 32, 31\n\t"
+		"oris %%r17, %%r17, (3b)@h\n\t"
+		"ori %%r17, %%r17, (3b)@l\n\t"
+		"std %%r17, 0(%[rseq_cs])\n\t"
+		RSEQ_INJECT_ASM(2)
+		"lwz %%r17, %[current_event_counter]\n\t"
+		"cmpw cr7, %[start_event_counter], %%r17\n\t"
+		"bne- cr7, %l[failure]\n\t"
+		RSEQ_INJECT_ASM(3)
+		"std %[to_write], 0(%[target])\n\t"
+		"2:\n\t"
+		RSEQ_INJECT_ASM(4)
+		"li %%r17, 0\n\t"
+		"std %%r17, 0(%[rseq_cs])\n\t"
+		: /* no outputs */
+		: [start_event_counter]"r"(start_value.event_counter),
+		  [current_event_counter]"m"(start_value.rseqp->u.e.event_counter),
+		  [to_write]"r"(to_write),
+		  [target]"b"(p),
+		  [rseq_cs]"b"(&start_value.rseqp->rseq_cs)
+		  RSEQ_INJECT_INPUT
+		: "r17", "memory", "cc"
+		  RSEQ_INJECT_CLOBBER
+		: failure
+	);
+#elif __PPC__
+	__asm__ __volatile__ goto (
+		".pushsection __rseq_table, \"aw\"\n\t"
+		".balign 32\n\t"
+		"3:\n\t"
+		/* 32-bit only supported on BE */
+		".long 0x0, 1f, 0x0, 2f, 0x0, %l[failure], 0x0, 0x0\n\t"
+		".popsection\n\t"
+		"1:\n\t"
+		RSEQ_INJECT_ASM(1)
+		"lis %%r17, (3b)@ha\n\t"
+		"addi %%r17, %%r17, (3b)@l\n\t"
+		"stw %%r17, 0(%[rseq_cs])\n\t"
+		RSEQ_INJECT_ASM(2)
+		"lwz %%r17, %[current_event_counter]\n\t"
+		"cmpw cr7, %[start_event_counter], %%r17\n\t"
+		"bne- cr7, %l[failure]\n\t"
+		RSEQ_INJECT_ASM(3)
+		"stw %[to_write], 0(%[target])\n\t"
+		"2:\n\t"
+		RSEQ_INJECT_ASM(4)
+		"li %%r17, 0\n\t"
+		"stw %%r17, 0(%[rseq_cs])\n\t"
+		: /* no outputs */
+		: [start_event_counter]"r"(start_value.event_counter),
+		  [current_event_counter]"m"(start_value.rseqp->u.e.event_counter),
+		  [to_write]"r"(to_write),
+		  [target]"b"(p),
+		  [rseq_cs]"b"(&start_value.rseqp->rseq_cs)
+		  RSEQ_INJECT_INPUT
+		: "r17", "memory", "cc"
 		  RSEQ_INJECT_CLOBBER
 		: failure
 	);
