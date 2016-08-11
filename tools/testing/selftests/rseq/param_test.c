@@ -548,7 +548,7 @@ static void show_usage(int argc, char **argv)
 	printf("	[-2 loops] Number of loops for delay injection 2\n");
 	printf("	[-3 loops] Number of loops for delay injection 3\n");
 	printf("	[-4 loops] Number of loops for delay injection 4\n");
-	printf("	[-5 loops] Number of loops for delay injection 5 (-1 to enable -m)\n");
+	printf("	[-5 loops] Number of loops for delay injection 5\n");
 	printf("	[-6 loops] Number of loops for delay injection 6 (-1 to enable -m)\n");
 	printf("	[-7 loops] Number of loops for delay injection 7 (-1 to enable -m)\n");
 	printf("	[-8 loops] Number of loops for delay injection 8 (-1 to enable -m)\n");
