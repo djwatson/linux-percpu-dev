@@ -304,10 +304,15 @@ struct rseq_state rseq_start(struct rseq_lock *rlock)
 	return result;
 }
 
+/*
+ * The __rseq_table section can be used by debuggers to better handle
+ * single-stepping through the restartable critical sections.
+ */
+
 #ifdef __x86_64__
 
 #define RSEQ_FINISH_ASM(_target_final, _to_write_final, _start_value, \
-		_failure) \
+		_failure, extra_store, extra_input) \
 	__asm__ __volatile__ goto ( \
 		".pushsection __rseq_table, \"aw\"\n\t" \
 		".balign 32\n\t" \
@@ -321,9 +326,10 @@ struct rseq_state rseq_start(struct rseq_lock *rlock)
 		"cmpl %[start_event_counter], %[current_event_counter]\n\t" \
 		"jnz %l[failure]\n\t" \
 		RSEQ_INJECT_ASM(3) \
+		extra_store \
 		"movq %[to_write_final], (%[target_final])\n\t" \
 		"2:\n\t" \
-		RSEQ_INJECT_ASM(4) \
+		RSEQ_INJECT_ASM(5) \
 		"movq $0, (%[rseq_cs])\n\t" \
 		: /* no outputs */ \
 		: [start_event_counter]"r"((_start_value).event_counter), \
@@ -331,16 +337,29 @@ struct rseq_state rseq_start(struct rseq_lock *rlock)
 		  [to_write_final]"r"(_to_write_final), \
 		  [target_final]"r"(_target_final), \
 		  [rseq_cs]"r"(&(_start_value).rseqp->rseq_cs) \
+		  extra_input \
 		  RSEQ_INJECT_INPUT \
 		: "memory", "cc" \
 		  RSEQ_INJECT_CLOBBER \
 		: _failure \
 	);
 
+#define RSEQ_FINISH2_SPECULATIVE_STORE_ASM() \
+		"movq %[to_write_spec], (%[target_spec])\n\t" \
+		RSEQ_INJECT_ASM(4)
+
+/* x86-64 is TSO */
+#define RSEQ_FINISH2_RELEASE_SPECULATIVE_STORE_ASM() \
+	RSEQ_FINISH2_SPECULATIVE_STORE_ASM()
+
+#define RSEQ_FINISH2_SPECULATIVE_STORE_INPUT_ASM(_target_spec, _to_write_spec) \
+		, [to_write_spec]"r"(_to_write_spec), \
+		[target_spec]"r"(_target_spec)
+
 #elif defined(__i386__)
 
 #define RSEQ_FINISH_ASM(_target_final, _to_write_final, _start_value, \
-		_failure) \
+		_failure, extra_store, extra_input) \
 	__asm__ __volatile__ goto ( \
 		".pushsection __rseq_table, \"aw\"\n\t" \
 		".balign 32\n\t" \
@@ -354,9 +373,10 @@ struct rseq_state rseq_start(struct rseq_lock *rlock)
 		"cmpl %[start_event_counter], %[current_event_counter]\n\t" \
 		"jnz %l[failure]\n\t" \
 		RSEQ_INJECT_ASM(3) \
+		extra_store \
 		"movl %[to_write_final], (%[target_final])\n\t" \
 		"2:\n\t" \
-		RSEQ_INJECT_ASM(4) \
+		RSEQ_INJECT_ASM(5) \
 		"movl $0, (%[rseq_cs])\n\t" \
 		: /* no outputs */ \
 		: [start_event_counter]"r"((_start_value).event_counter), \
@@ -364,16 +384,29 @@ struct rseq_state rseq_start(struct rseq_lock *rlock)
 		  [to_write_final]"r"(_to_write_final), \
 		  [target_final]"r"(_target_final), \
 		  [rseq_cs]"r"(&(_start_value).rseqp->rseq_cs) \
+		  extra_input \
 		  RSEQ_INJECT_INPUT \
 		: "memory", "cc" \
 		  RSEQ_INJECT_CLOBBER \
 		: _failure \
 	);
 
+#define RSEQ_FINISH2_SPECULATIVE_STORE_ASM() \
+		"movl %[to_write_spec], (%[target_spec])\n\t" \
+		RSEQ_INJECT_ASM(4)
+
+#define RSEQ_FINISH2_RELEASE_SPECULATIVE_STORE_ASM() \
+		RSEQ_FINISH2_SPECULATIVE_STORE_ASM() \
+		"lock; addl $0,0(%%esp)\n\t"
+
+#define RSEQ_FINISH2_SPECULATIVE_STORE_INPUT_ASM(_target_spec, _to_write_spec) \
+		, [to_write_spec]"r"(_to_write_spec), \
+		[target_spec]"r"(_target_spec)
+
 #elif defined(__ARMEL__)
 
 #define RSEQ_FINISH_ASM(_target_final, _to_write_final, _start_value, \
-		_failure) \
+		_failure, extra_store, extra_input) \
 	__asm__ __volatile__ goto ( \
 		".pushsection __rseq_table, \"aw\"\n\t" \
 		".balign 32\n\t" \
@@ -389,9 +422,10 @@ struct rseq_state rseq_start(struct rseq_lock *rlock)
 		"cmp %[start_event_counter], r0\n\t" \
 		"bne %l[failure]\n\t" \
 		RSEQ_INJECT_ASM(3) \
+		extra_store \
 		"str %[to_write_final], [%[target_final]]\n\t" \
 		"2:\n\t" \
-		RSEQ_INJECT_ASM(4) \
+		RSEQ_INJECT_ASM(5) \
 		"str r1, [%[rseq_cs]]\n\t" \
 		"b 4f\n\t" \
 		".balign 32\n\t" \
@@ -404,16 +438,29 @@ struct rseq_state rseq_start(struct rseq_lock *rlock)
 		  [to_write_final]"r"(_to_write_final), \
 		  [target_final]"r"(_target_final), \
 		  [rseq_cs]"r"(&(_start_value).rseqp->rseq_cs) \
+		  extra_input \
 		  RSEQ_INJECT_INPUT \
 		: "r0", "r1", "memory", "cc" \
 		  RSEQ_INJECT_CLOBBER \
 		: _failure \
 	);
 
+#define RSEQ_FINISH2_SPECULATIVE_STORE_ASM() \
+		"str %[to_write_spec], [%[target_spec]]\n\t" \
+		RSEQ_INJECT_ASM(4)
+
+#define RSEQ_FINISH2_RELEASE_SPECULATIVE_STORE_ASM() \
+		RSEQ_FINISH2_SPECULATIVE_STORE_ASM() \
+		"dmb\n\t"
+
+#define RSEQ_FINISH2_SPECULATIVE_STORE_INPUT_ASM(_target_spec, _to_write_spec) \
+		, [to_write_spec]"r"(_to_write_spec), \
+		[target_spec]"r"(_target_spec)
+
 #elif __PPC64__
 
 #define RSEQ_FINISH_ASM(_target_final, _to_write_final, _start_value, \
-		_failure) \
+		_failure, extra_store, extra_input) \
 	__asm__ __volatile__ goto ( \
 		".pushsection __rseq_table, \"aw\"\n\t" \
 		".balign 32\n\t" \
@@ -433,9 +480,10 @@ struct rseq_state rseq_start(struct rseq_lock *rlock)
 		"cmpw cr7, %[start_event_counter], %%r17\n\t" \
 		"bne- cr7, %l[failure]\n\t" \
 		RSEQ_INJECT_ASM(3) \
+		extra_store \
 		"std %[to_write_final], 0(%[target_final])\n\t" \
 		"2:\n\t" \
-		RSEQ_INJECT_ASM(4) \
+		RSEQ_INJECT_ASM(5) \
 		"li %%r17, 0\n\t" \
 		"std %%r17, 0(%[rseq_cs])\n\t" \
 		: /* no outputs */ \
@@ -444,16 +492,29 @@ struct rseq_state rseq_start(struct rseq_lock *rlock)
 		  [to_write_final]"r"(_to_write_final), \
 		  [target_final]"b"(_target_final), \
 		  [rseq_cs]"b"(&(_start_value).rseqp->rseq_cs) \
+		  extra_input \
 		  RSEQ_INJECT_INPUT \
 		: "r17", "memory", "cc" \
 		  RSEQ_INJECT_CLOBBER \
 		: _failure \
 	);
 
+#define RSEQ_FINISH2_SPECULATIVE_STORE_ASM() \
+		"std %[to_write_spec], 0(%[target_spec])\n\t" \
+		RSEQ_INJECT_ASM(4)
+
+#define RSEQ_FINISH2_RELEASE_SPECULATIVE_STORE_ASM() \
+		RSEQ_FINISH2_SPECULATIVE_STORE_ASM() \
+		"lwsync\n\t"
+
+#define RSEQ_FINISH2_SPECULATIVE_STORE_INPUT_ASM(_target_spec, _to_write_spec) \
+		, [to_write_spec]"r"(_to_write_spec), \
+		[target_spec]"b"(_target_spec)
+
 #elif __PPC__
 
 #define RSEQ_FINISH_ASM(_target_final, _to_write_final, _start_value, \
-		_failure) \
+		_failure, extra_store, extra_input) \
 	__asm__ __volatile__ goto ( \
 		".pushsection __rseq_table, \"aw\"\n\t" \
 		".balign 32\n\t" \
@@ -471,9 +532,10 @@ struct rseq_state rseq_start(struct rseq_lock *rlock)
 		"cmpw cr7, %[start_event_counter], %%r17\n\t" \
 		"bne- cr7, %l[failure]\n\t" \
 		RSEQ_INJECT_ASM(3) \
+		extra_store \
 		"stw %[to_write_final], 0(%[target_final])\n\t" \
 		"2:\n\t" \
-		RSEQ_INJECT_ASM(4) \
+		RSEQ_INJECT_ASM(5) \
 		"li %%r17, 0\n\t" \
 		"stw %%r17, 0(%[rseq_cs])\n\t" \
 		: /* no outputs */ \
@@ -482,16 +544,28 @@ struct rseq_state rseq_start(struct rseq_lock *rlock)
 		  [to_write_final]"r"(_to_write_final), \
 		  [target_final]"b"(_target_final), \
 		  [rseq_cs]"b"(&(_start_value).rseqp->rseq_cs) \
+		  extra_input \
 		  RSEQ_INJECT_INPUT \
 		: "r17", "memory", "cc" \
 		  RSEQ_INJECT_CLOBBER \
 		: _failure \
 	);
 
+#define RSEQ_FINISH2_SPECULATIVE_STORE_ASM() \
+		"stw %[to_write_spec], 0(%[target_spec])\n\t" \
+		RSEQ_INJECT_ASM(4)
+
+#define RSEQ_FINISH2_RELEASE_SPECULATIVE_STORE_ASM() \
+		RSEQ_FINISH2_SPECULATIVE_STORE_ASM() \
+		"lwsync\n\t"
+
+#define RSEQ_FINISH2_SPECULATIVE_STORE_INPUT_ASM(_target_spec, _to_write_spec) \
+		, [to_write_spec]"r"(_to_write_spec), \
+		[target_spec]"b"(_target_spec)
+
 #else
 #error unsupported target
 #endif
-
 
 static inline __attribute__((always_inline))
 bool rseq_finish(struct rseq_lock *rlock,
@@ -506,13 +580,7 @@ bool rseq_finish(struct rseq_lock *rlock,
 		return false;
 	}
 
-	/*
-	 * The __rseq_table section can be used by debuggers to better
-	 * handle single-stepping through the restartable critical
-	 * sections.
-	 */
-
-	RSEQ_FINISH_ASM(p, to_write, start_value, failure);
+	RSEQ_FINISH_ASM(p, to_write, start_value, failure, , );
 
 	return true;
 failure:
@@ -543,199 +611,35 @@ bool rseq_finish2(struct rseq_lock *rlock,
 		return false;
 	}
 
-	/*
-	 * The __rseq_table section can be used by debuggers to better
-	 * handle single-stepping through the restartable critical
-	 * sections.
-	 */
+	RSEQ_FINISH_ASM(p_final, to_write_final, start_value, failure,
+		RSEQ_FINISH2_SPECULATIVE_STORE_ASM(),
+		RSEQ_FINISH2_SPECULATIVE_STORE_INPUT_ASM(p_spec, to_write_spec)
+	);
+	return true;
+failure:
+	RSEQ_INJECT_FAILED
+	ACCESS_ONCE(start_value.rseqp->rseq_cs) = 0;
+	return false;
+}
 
-#ifdef __x86_64__
-	__asm__ __volatile__ goto (
-		".pushsection __rseq_table, \"aw\"\n\t"
-		".balign 32\n\t"
-		"3:\n\t"
-		".quad 1f, 2f, %l[failure], 0x0\n\t"
-		".popsection\n\t"
-		"1:\n\t"
-		RSEQ_INJECT_ASM(1)
-		"movq $3b, (%[rseq_cs])\n\t"
-		RSEQ_INJECT_ASM(2)
-		"cmpl %[start_event_counter], %[current_event_counter]\n\t"
-		"jnz %l[failure]\n\t"
-		RSEQ_INJECT_ASM(3)
-		"movq %[to_write_spec], (%[target_spec])\n\t"
-		RSEQ_INJECT_ASM(4)
-		"movq %[to_write_final], (%[target_final])\n\t"
-		"2:\n\t"
-		RSEQ_INJECT_ASM(5)
-		"movq $0, (%[rseq_cs])\n\t"
-		: /* no outputs */
-		: [start_event_counter]"r"(start_value.event_counter),
-		  [current_event_counter]"m"(start_value.rseqp->u.e.event_counter),
-		  [to_write_spec]"r"(to_write_spec),
-		  [target_spec]"r"(p_spec),
-		  [to_write_final]"r"(to_write_final),
-		  [target_final]"r"(p_final),
-		  [rseq_cs]"r"(&start_value.rseqp->rseq_cs)
-		  RSEQ_INJECT_INPUT
-		: "memory", "cc"
-		  RSEQ_INJECT_CLOBBER
-		: failure
+static inline __attribute__((always_inline))
+bool rseq_finish2_release(struct rseq_lock *rlock,
+		intptr_t *p_spec, intptr_t to_write_spec,
+		intptr_t *p_final, intptr_t to_write_final,
+		struct rseq_state start_value)
+{
+	RSEQ_INJECT_C(9)
+
+	if (unlikely(start_value.lock_state != RSEQ_LOCK_STATE_RESTART)) {
+		if (start_value.lock_state == RSEQ_LOCK_STATE_LOCK)
+			rseq_fallback_wait(rlock);
+		return false;
+	}
+
+	RSEQ_FINISH_ASM(p_final, to_write_final, start_value, failure,
+		RSEQ_FINISH2_RELEASE_SPECULATIVE_STORE_ASM(),
+		RSEQ_FINISH2_SPECULATIVE_STORE_INPUT_ASM(p_spec, to_write_spec)
 	);
-#elif defined(__i386__)
-	__asm__ __volatile__ goto (
-		".pushsection __rseq_table, \"aw\"\n\t"
-		".balign 32\n\t"
-		"3:\n\t"
-		".long 1f, 0x0, 2f, 0x0, %l[failure], 0x0, 0x0, 0x0\n\t"
-		".popsection\n\t"
-		"1:\n\t"
-		RSEQ_INJECT_ASM(1)
-		"movl $3b, (%[rseq_cs])\n\t"
-		RSEQ_INJECT_ASM(2)
-		"cmpl %[start_event_counter], %[current_event_counter]\n\t"
-		"jnz %l[failure]\n\t"
-		RSEQ_INJECT_ASM(3)
-		"movl %[to_write_spec], (%[target_spec])\n\t"
-		RSEQ_INJECT_ASM(4)
-		"movl %[to_write_final], (%[target_final])\n\t"
-		"2:\n\t"
-		RSEQ_INJECT_ASM(5)
-		"movl $0, (%[rseq_cs])\n\t"
-		: /* no outputs */
-		: [start_event_counter]"r"(start_value.event_counter),
-		  [current_event_counter]"m"(start_value.rseqp->u.e.event_counter),
-		  [to_write_spec]"r"(to_write_spec),
-		  [target_spec]"r"(p_spec),
-		  [to_write_final]"r"(to_write_final),
-		  [target_final]"r"(p_final),
-		  [rseq_cs]"r"(&start_value.rseqp->rseq_cs)
-		  RSEQ_INJECT_INPUT
-		: "memory", "cc"
-		  RSEQ_INJECT_CLOBBER
-		: failure
-	);
-#elif defined(__ARMEL__)
-	__asm__ __volatile__ goto (
-		".pushsection __rseq_table, \"aw\"\n\t"
-		".balign 32\n\t"
-		".word 1f, 0x0, 2f, 0x0, %l[failure], 0x0, 0x0, 0x0\n\t"
-		".popsection\n\t"
-		"1:\n\t"
-		RSEQ_INJECT_ASM(1)
-		"adr r0, 3f\n\t"
-		"str r0, [%[rseq_cs]]\n\t"
-		RSEQ_INJECT_ASM(2)
-		"ldr r0, %[current_event_counter]\n\t"
-		"mov r1, #0\n\t"
-		"cmp %[start_event_counter], r0\n\t"
-		"bne %l[failure]\n\t"
-		RSEQ_INJECT_ASM(3)
-		"str %[to_write_spec], [%[target_spec]]\n\t"
-		RSEQ_INJECT_ASM(4)
-		"str %[to_write_final], [%[target_final]]\n\t"
-		"2:\n\t"
-		RSEQ_INJECT_ASM(5)
-		"str r1, [%[rseq_cs]]\n\t"
-		"b 4f\n\t"
-		".balign 32\n\t"
-		"3:\n\t"
-		".word 1b, 0x0, 2b, 0x0, l[failure], 0x0, 0x0, 0x0\n\t"
-		"4:\n\t"
-		: /* no outputs */
-		: [start_event_counter]"r"(start_value.event_counter),
-		  [current_event_counter]"m"(start_value.rseqp->u.e.event_counter),
-		  [to_write_spec]"r"(to_write_spec),
-		  [target_spec]"r"(p_spec),
-		  [to_write_final]"r"(to_write_final),
-		  [target_final]"r"(p_final),
-		  [rseq_cs]"r"(&start_value.rseqp->rseq_cs)
-		  RSEQ_INJECT_INPUT
-		: "r0", "r1", "memory", "cc"
-		  RSEQ_INJECT_CLOBBER
-		: failure
-	);
-#elif __PPC64__
-	__asm__ __volatile__ goto (
-		".pushsection __rseq_table, \"aw\"\n\t"
-		".balign 32\n\t"
-		"3:\n\t"
-		".quad 1f, 2f, %l[failure], 0x0\n\t"
-		".popsection\n\t"
-		"1:\n\t"
-		RSEQ_INJECT_ASM(1)
-		"lis %%r17, (3b)@highest\n\t"
-		"ori %%r17, %%r17, (3b)@higher\n\t"
-		"rldicr %%r17, %%r17, 32, 31\n\t"
-		"oris %%r17, %%r17, (3b)@h\n\t"
-		"ori %%r17, %%r17, (3b)@l\n\t"
-		"std %%r17, 0(%[rseq_cs])\n\t"
-		RSEQ_INJECT_ASM(2)
-		"lwz %%r17, %[current_event_counter]\n\t"
-		"cmpw cr7, %[start_event_counter], %%r17\n\t"
-		"bne- cr7, %l[failure]\n\t"
-		RSEQ_INJECT_ASM(3)
-		"std %[to_write_spec], 0(%[target_spec])\n\t"
-		RSEQ_INJECT_ASM(4)
-		"std %[to_write_final], 0(%[target_final])\n\t"
-		"2:\n\t"
-		RSEQ_INJECT_ASM(5)
-		"li %%r17, 0\n\t"
-		"std %%r17, 0(%[rseq_cs])\n\t"
-		: /* no outputs */
-		: [start_event_counter]"r"(start_value.event_counter),
-		  [current_event_counter]"m"(start_value.rseqp->u.e.event_counter),
-		  [to_write_spec]"r"(to_write_spec),
-		  [target_spec]"b"(p_spec),
-		  [to_write_final]"r"(to_write_final),
-		  [target_final]"b"(p_final),
-		  [rseq_cs]"b"(&start_value.rseqp->rseq_cs)
-		  RSEQ_INJECT_INPUT
-		: "r17", "memory", "cc"
-		  RSEQ_INJECT_CLOBBER
-		: failure
-	);
-#elif __PPC__
-	__asm__ __volatile__ goto (
-		".pushsection __rseq_table, \"aw\"\n\t"
-		".balign 32\n\t"
-		"3:\n\t"
-		/* 32-bit only supported on BE */
-		".long 0x0, 1f, 0x0, 2f, 0x0, %l[failure], 0x0, 0x0\n\t"
-		".popsection\n\t"
-		"1:\n\t"
-		RSEQ_INJECT_ASM(1)
-		"lis %%r17, (3b)@ha\n\t"
-		"addi %%r17, %%r17, (3b)@l\n\t"
-		"stw %%r17, 0(%[rseq_cs])\n\t"
-		RSEQ_INJECT_ASM(2)
-		"lwz %%r17, %[current_event_counter]\n\t"
-		"cmpw cr7, %[start_event_counter], %%r17\n\t"
-		"bne- cr7, %l[failure]\n\t"
-		RSEQ_INJECT_ASM(3)
-		"stw %[to_write_spec], 0(%[target_spec])\n\t"
-		RSEQ_INJECT_ASM(4)
-		"stw %[to_write_final], 0(%[target_final])\n\t"
-		"2:\n\t"
-		RSEQ_INJECT_ASM(5)
-		"li %%r17, 0\n\t"
-		"stw %%r17, 0(%[rseq_cs])\n\t"
-		: /* no outputs */
-		: [start_event_counter]"r"(start_value.event_counter),
-		  [current_event_counter]"m"(start_value.rseqp->u.e.event_counter),
-		  [to_write_spec]"r"(to_write_spec),
-		  [target_spec]"b"(p_spec),
-		  [to_write_final]"r"(to_write_final),
-		  [target_final]"b"(p_final),
-		  [rseq_cs]"b"(&start_value.rseqp->rseq_cs)
-		  RSEQ_INJECT_INPUT
-		: "r17", "memory", "cc"
-		  RSEQ_INJECT_CLOBBER
-		: failure
-	);
-#else
-#error unsupported target
-#endif
 	return true;
 failure:
 	RSEQ_INJECT_FAILED
