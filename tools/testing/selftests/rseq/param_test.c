@@ -41,7 +41,8 @@ static __thread unsigned int yield_mod_cnt, nr_retry;
 	, [loop_cnt_1]"m"(loop_cnt[1]) \
 	, [loop_cnt_2]"m"(loop_cnt[2]) \
 	, [loop_cnt_3]"m"(loop_cnt[3]) \
-	, [loop_cnt_4]"m"(loop_cnt[4])
+	, [loop_cnt_4]"m"(loop_cnt[4]) \
+	, [loop_cnt_5]"m"(loop_cnt[5])
 
 #if defined(__x86_64__) || defined(__i386__)
 
